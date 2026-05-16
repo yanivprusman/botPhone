@@ -1,6 +1,5 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { sendCmdJSON } from '../daemon';
 import { sendWhatsApp, sendWhatsAppMedia } from '../whatsapp';
 import { getUserPrefs, saveUserPrefs, isCoffeeDue } from '../users';
 import type { CallSession, ConversationFlow, CallStage } from './types';
@@ -129,43 +128,30 @@ export const songOnDemandFlow: ConversationFlow = {
       session.songTitle = title;
       pushEvent(session, 'searching', `Found: ${title}`);
 
-      // Update 2/4: confirm what was found and that the call is coming.
-      await wa(`Found: ${title}. Calling you now — pick up to hear it.`);
+      // Update 2: confirm found + send the song via WhatsApp.
+      await wa(`Found: ${title}. Sending it your way...`);
 
-      // Send the full-quality audio via WhatsApp so the user can replay it
-      // anytime — independent of the call (which uses a low-quality codec).
-      // Bypasses the opt-out gate: this is content, not a progress update.
-      if (reply) {
-        const oggPath = await toOggOpus(songPath);
-        if (oggPath) {
-          await sendWhatsAppMedia(reply, oggPath, title);
-        }
+      // Send the full-quality audio as a WhatsApp audio message. Bypasses
+      // the opt-out gate: this is the requested content, not a progress
+      // update. Phone call path is currently disabled — keep botCall code
+      // alive in this file but skip invoking it for now.
+      if (!reply) {
+        throw new Error('No WhatsApp reply target — cannot deliver song.');
       }
-
-      // 2. Call + greet. --noHangup so we can inject the song after.
-      const greet =
-        "Hello! Someone has requested a song for you. " +
-        `Now playing: ${title}.`;
-      pushEvent(session, 'dialing', `Calling ${session.to}`);
-      pushEvent(session, 'greeting', `Announcing: ${title}`);
-      await sendCmdJSON('botCall', {
-        to: session.to,
-        speech: greet,
-        noHangup: true,
-      }, 180_000);
-
-      // 3. Play the song into the active call.
-      pushEvent(session, 'playing', `Playing: ${title}`);
-      await sendCmdJSON('botPlay', { audio: songPath }, 600_000);
-
-      // 4. Hang up.
-      pushEvent(session, 'hangingUp');
-      await sendCmdJSON('botHangup', {}, 5_000);
+      const oggPath = await toOggOpus(songPath);
+      if (!oggPath) {
+        throw new Error('Failed to transcode song to OGG Opus.');
+      }
+      pushEvent(session, 'playing', `Sending: ${title}`);
+      const sent = await sendWhatsAppMedia(reply, oggPath, title);
+      if (!sent) {
+        throw new Error('Failed to send the song over WhatsApp.');
+      }
       pushEvent(session, 'done');
 
-      // Update 3/4: done summary with duration.
+      // Done summary with duration.
       const duration = Date.now() - session.startedAt;
-      await wa(`Done! Played "${title}" (${fmtDuration(duration)} total).`);
+      await wa(`Done! Sent "${title}" (${fmtDuration(duration)}).`);
 
       // Update 4/4: coffee nudge. Sent to everyone if updates are on; if
       // opted out, only once per 365 days so the user isn't completely
@@ -194,16 +180,11 @@ export const songOnDemandFlow: ConversationFlow = {
     } catch (err) {
       session.error = err instanceof Error ? err.message : String(err);
       pushEvent(session, 'failed', session.error);
-      // Reply with a friendly message rather than the raw exception text.
-      if (session.error.includes('Call declined') ||
-          session.error.includes('never answered')) {
-        await wa("You didn't pick up — try again when you're ready.");
-      } else if (session.error.includes('yt-dlp')) {
+      if (session.error.includes('yt-dlp')) {
         await wa(`Sorry, couldn't find "${query}" on YouTube.`);
       } else {
         await wa(`Failed: ${session.error}`);
       }
-      try { await sendCmdJSON('botHangup', {}, 5_000); } catch { /* ignore */ }
     } finally {
       session.done = true;
       session.finishedAt = Date.now();
