@@ -29,6 +29,34 @@ export async function sendWhatsApp(recipient: string, message: string): Promise<
 }
 
 /**
+ * Send a media file (audio/image/video/document) to a WhatsApp recipient. The
+ * bridge classifies by file extension — .ogg is treated as a voice-style audio
+ * message; other extensions go through as documents.
+ */
+export async function sendWhatsAppMedia(
+  recipient: string,
+  mediaPath: string,
+  caption: string = '',
+): Promise<boolean> {
+  if (!recipient || !mediaPath) return false;
+  try {
+    const res = await fetch(`${WHATSAPP_BRIDGE_URL}/api/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient, message: caption, media_path: mediaPath }),
+    });
+    if (!res.ok) {
+      console.error(`[whatsapp] media send failed (${res.status}): ${await res.text()}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[whatsapp] media send transport error:', err);
+    return false;
+  }
+}
+
+/**
  * Convert a WhatsApp JID (e.g. "972556677260@s.whatsapp.net" or
  * "972556677260:42@s.whatsapp.net") to a local Israeli phone format
  * ("0556677260"). Falls back to the raw digits if it doesn't look Israeli.

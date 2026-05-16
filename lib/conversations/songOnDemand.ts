@@ -1,7 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { sendCmdJSON } from '../daemon';
-import { sendWhatsApp } from '../whatsapp';
+import { sendWhatsApp, sendWhatsAppMedia } from '../whatsapp';
 import { getUserPrefs, saveUserPrefs, isCoffeeDue } from '../users';
 import type { CallSession, ConversationFlow, CallStage } from './types';
 
@@ -17,6 +17,24 @@ function fmtDuration(ms: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/** Transcode a WAV to OGG Opus so WhatsApp renders it as a playable audio
+ *  message (the bridge classifies .ogg → audio/ogg opus). Returns the new
+ *  path, or null on failure. */
+async function toOggOpus(wavPath: string): Promise<string | null> {
+  const oggPath = wavPath.replace(/\.wav$/i, '.ogg');
+  try {
+    await execFileAsync('ffmpeg', [
+      '-y', '-i', wavPath,
+      '-c:a', 'libopus', '-b:a', '96k', '-vbr', 'on',
+      oggPath,
+    ], { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
+    return oggPath;
+  } catch (err) {
+    console.error('[songOnDemand] ffmpeg opus encode failed:', err);
+    return null;
+  }
 }
 
 async function downloadSong(query: string): Promise<{ path: string; title: string }> {
@@ -113,6 +131,16 @@ export const songOnDemandFlow: ConversationFlow = {
 
       // Update 2/4: confirm what was found and that the call is coming.
       await wa(`Found: ${title}. Calling you now — pick up to hear it.`);
+
+      // Send the full-quality audio via WhatsApp so the user can replay it
+      // anytime — independent of the call (which uses a low-quality codec).
+      // Bypasses the opt-out gate: this is content, not a progress update.
+      if (reply) {
+        const oggPath = await toOggOpus(songPath);
+        if (oggPath) {
+          await sendWhatsAppMedia(reply, oggPath, title);
+        }
+      }
 
       // 2. Call + greet. --noHangup so we can inject the song after.
       const greet =
