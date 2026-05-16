@@ -43,7 +43,7 @@ async function getBridgeOwnNumber(): Promise<string | null> {
 
 const WELCOME_MESSAGE =
   "Hi! I'm a bot 🤖 — not a person. " +
-  "When you send `play <song>`, I'll search YouTube and call you back to play it.\n\n" +
+  "When you send `play <song>`, I'll search YouTube and send the song here.\n\n" +
   "Example: `play tom petty free fallin'`\n\n" +
   "I'll send you updates — you can stop them any time, send `no updates`.";
 
