@@ -23,8 +23,10 @@ async function downloadSong(query: string): Promise<{ path: string; title: strin
       '-o', out,
       '--print', 'title',
       '--no-progress',
+      '--remote-components', 'ejs:github',
+      '--js-runtimes', 'node',
     ],
-    { timeout: 120_000 },
+    { timeout: 180_000 },
   );
   const title = stdout.trim().split('\n')[0] || query;
   return { path: resolved, title };

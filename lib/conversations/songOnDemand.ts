@@ -10,23 +10,46 @@ function pushEvent(session: CallSession, stage: CallStage, detail?: string) {
 }
 
 async function downloadSong(query: string): Promise<{ path: string; title: string }> {
-  const out = `/tmp/botphone-song-${Date.now()}.%(ext)s`;
-  const resolved = out.replace('.%(ext)s', '.wav');
-  const { stdout } = await execFileAsync(
-    '/root/.local/bin/yt-dlp',
-    [
-      `ytsearch1:${query}`,
-      '-x',
-      '--audio-format', 'wav',
-      '--no-playlist',
-      '-o', out,
-      '--print', 'title',
-      '--no-progress',
-    ],
-    { timeout: 120_000 },
-  );
-  const title = stdout.trim().split('\n')[0] || query;
-  return { path: resolved, title };
+  const ts = Date.now();
+  const out = `/tmp/botphone-song-${ts}.%(ext)s`;
+  const resolved = `/tmp/botphone-song-${ts}.wav`;
+  const logFile = `/tmp/botphone-yt-${ts}.log`;
+  const { writeFileSync } = await import('fs');
+  let stdout = '';
+  let stderr = '';
+  try {
+    const r = await execFileAsync(
+      '/root/.local/bin/yt-dlp',
+      [
+        `ytsearch1:${query}`,
+        '-x',
+        '--audio-format', 'wav',
+        '--no-playlist',
+        '-o', out,
+        '--print', 'after_move:filepath',
+        '--print', 'title',
+        '--no-progress',
+        '--remote-components', 'ejs:github',
+        '--js-runtimes', 'node',
+      ],
+      { timeout: 180_000, maxBuffer: 10 * 1024 * 1024 },
+    );
+    stdout = r.stdout;
+    stderr = r.stderr;
+  } catch (err) {
+    // execFile throws on non-zero exit but still gives us stdout/stderr.
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    stdout = e.stdout ?? '';
+    stderr = e.stderr ?? '';
+    writeFileSync(logFile, `EXIT_ERR: ${e.message}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}\n`);
+    throw new Error(`yt-dlp failed: see ${logFile}`);
+  }
+  writeFileSync(logFile, `STDOUT:\n${stdout}\nSTDERR:\n${stderr}\n`);
+  const lines = stdout.trim().split('\n').filter(Boolean);
+  // --print after_move:filepath gives the actual path; title is on a separate line.
+  const actualPath = lines.find((l) => l.startsWith('/tmp/')) ?? resolved;
+  const title = lines.find((l) => !l.startsWith('/tmp/')) ?? query;
+  return { path: actualPath, title };
 }
 
 /**
