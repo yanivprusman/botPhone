@@ -1,8 +1,43 @@
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { NextRequest, NextResponse } from 'next/server';
 import { createSession } from '@/lib/sessionStore';
 import { getFlow } from '@/lib/conversations';
 import { jidToPhone, parsePlayCommand, sendWhatsApp } from '@/lib/whatsapp';
 import { getUserPrefs, saveUserPrefs } from '@/lib/users';
+
+const execFileAsync = promisify(execFile);
+
+/** Expected WhatsApp number the bridge MUST be logged in as. Anything else
+ *  is rejected so messages to the user's personal WhatsApp don't get hijacked
+ *  into placing calls. Override via BOT_WHATSAPP_NUMBER env. */
+const EXPECTED_BOT_NUMBER = process.env.BOT_WHATSAPP_NUMBER || '972559448186';
+
+let cachedBridgeNumber: string | null = null;
+let bridgeNumberCheckedAt = 0;
+
+/** Read the bridge's own JID from its SQLite store. Cached for 60s to avoid
+ *  hammering the DB on every webhook hit. */
+async function getBridgeOwnNumber(): Promise<string | null> {
+  if (cachedBridgeNumber && Date.now() - bridgeNumberCheckedAt < 60_000) {
+    return cachedBridgeNumber;
+  }
+  try {
+    const { stdout } = await execFileAsync('sqlite3', [
+      '/opt/automateLinux/mcpServers/whatsapp/whatsapp-bridge/store/whatsapp.db',
+      'SELECT jid FROM whatsmeow_device LIMIT 1;',
+    ], { timeout: 3_000 });
+    const jid = stdout.trim();
+    if (!jid) return null;
+    const digits = jid.split('@')[0].split(':')[0].replace(/[^\d]/g, '');
+    cachedBridgeNumber = digits;
+    bridgeNumberCheckedAt = Date.now();
+    return digits;
+  } catch (err) {
+    console.error('[webhook] failed to read bridge JID:', err);
+    return null;
+  }
+}
 
 const WELCOME_MESSAGE =
   "Hi! When you send `play <song>`, I'll search YouTube and call you back to play it.\n\n" +
@@ -39,6 +74,26 @@ function isDirectChat(chatJID?: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  // SAFETY: refuse to do anything unless the bridge is logged in as the
+  // expected bot WhatsApp number. Otherwise we'd be hijacking the user's
+  // personal WhatsApp account (whoever messages them gets called back).
+  const bridgeNumber = await getBridgeOwnNumber();
+  if (!bridgeNumber) {
+    console.error('[webhook] cannot determine bridge own number — refusing');
+    return NextResponse.json({ error: 'bridge identity unknown' }, { status: 503 });
+  }
+  if (bridgeNumber !== EXPECTED_BOT_NUMBER) {
+    console.error(
+      `[webhook] REFUSED: bridge logged in as ${bridgeNumber}, expected ${EXPECTED_BOT_NUMBER}. ` +
+      `Re-pair the bridge with the bot WhatsApp account.`,
+    );
+    return NextResponse.json({
+      error: 'bridge logged in to wrong account',
+      bridgeNumber,
+      expected: EXPECTED_BOT_NUMBER,
+    }, { status: 412 });
+  }
+
   const body = (await req.json().catch(() => ({}))) as WhatsAppWebhookPayload;
 
   // Always 200 quickly — the bridge has a 30s timeout and we don't want
