@@ -1,0 +1,4 @@
+{
+  "description": "Interactive voice bot — places phone calls and runs conversation flows (song-request, more to come) using BT audio injection, TTS, and STT.",
+  "icon": "Phone"
+}
