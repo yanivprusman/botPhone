@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { sendCmdJSON } from '../daemon';
 import { sendWhatsApp } from '../whatsapp';
+import { getUserPrefs, saveUserPrefs, isCoffeeDue } from '../users';
 import type { CallSession, ConversationFlow, CallStage } from './types';
 
 const execFileAsync = promisify(execFile);
@@ -73,11 +74,19 @@ export const songOnDemandFlow: ConversationFlow = {
 
   async run(session) {
     const query = String(session.params.query ?? '').trim();
-    // WhatsApp recipient to send progress updates back to. Set by the webhook
-    // handler when the flow is triggered from WhatsApp. May be undefined for
-    // UI-triggered flows — sendWhatsApp() is a no-op in that case.
+    // WhatsApp recipient + user key. replyTo is the chat JID we send into;
+    // userKey is the sender JID we use to look up prefs (informed/optOut/coffee).
     const reply = String(session.params.replyTo ?? '');
+    const userKey = String(session.params.userKey ?? reply);
+    const prefs = userKey ? await getUserPrefs(userKey) : null;
+    const updatesMuted = !!prefs?.optOut;
+    // wa() = send a progress update; no-op when the user opted out.
     const wa = async (msg: string) => {
+      if (reply && !updatesMuted) await sendWhatsApp(reply, msg);
+    };
+    // waAlways() = bypass the opt-out gate. Reserved for the yearly coffee
+    // nudge so opted-out users get exactly one nudge per 365 days.
+    const waAlways = async (msg: string) => {
       if (reply) await sendWhatsApp(reply, msg);
     };
 
@@ -130,8 +139,30 @@ export const songOnDemandFlow: ConversationFlow = {
       const duration = Date.now() - session.startedAt;
       await wa(`Done! Played "${title}" (${fmtDuration(duration)} total).`);
 
-      // Update 4/4: the coffee joke.
-      await wa("Buy me a coffee ☕ 15 NIS via Bit?");
+      // Update 4/4: coffee nudge. Sent to everyone if updates are on; if
+      // opted out, only once per 365 days so the user isn't completely
+      // spammed but isn't fully forgotten either.
+      if (prefs && userKey) {
+        const due = isCoffeeDue(prefs);
+        if (!updatesMuted) {
+          await wa("Buy me a coffee ☕ 15 NIS via Bit?");
+          prefs.lastCoffeeAt = Date.now();
+          await saveUserPrefs(userKey, prefs);
+        } else if (due) {
+          // Opt-out path: one nudge a year, with a short re-disclosure so
+          // they remember they can re-enable updates anytime.
+          await waAlways(
+            "Buy me a coffee ☕ 15 NIS via Bit? " +
+            "(You're muted from progress updates — send `updates on` to re-enable.)",
+          );
+          prefs.lastCoffeeAt = Date.now();
+          await saveUserPrefs(userKey, prefs);
+        }
+      } else if (reply) {
+        // No userKey (e.g. UI-triggered flow with replyTo set manually) —
+        // send the simple coffee message; we have no way to track yearly.
+        await wa("Buy me a coffee ☕ 15 NIS via Bit?");
+      }
     } catch (err) {
       session.error = err instanceof Error ? err.message : String(err);
       pushEvent(session, 'failed', session.error);

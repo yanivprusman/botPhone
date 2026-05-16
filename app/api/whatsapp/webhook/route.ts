@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSession } from '@/lib/sessionStore';
 import { getFlow } from '@/lib/conversations';
 import { jidToPhone, parsePlayCommand, sendWhatsApp } from '@/lib/whatsapp';
+import { getUserPrefs, saveUserPrefs } from '@/lib/users';
+
+const WELCOME_MESSAGE =
+  "Hi! When you send `play <song>`, I'll search YouTube and call you back to play it.\n\n" +
+  "I'll send you 4 progress updates per request (Got it, Found, Done, plus a yearly tip-jar nudge).\n\n" +
+  "Reply `no updates` to mute the per-request messages anytime.";
+
+const OPT_OUT_PHRASES = ['no updates'];
+const OPT_IN_PHRASES = ['updates on'];
+
+function matchesAny(content: string, phrases: string[]): boolean {
+  const normalized = content.trim().toLowerCase();
+  return phrases.some((p) => normalized === p);
+}
 
 interface WhatsAppWebhookPayload {
   sender?: string;
@@ -35,8 +49,25 @@ export async function POST(req: NextRequest) {
   // Who we reply to. Prefer the chat (works for both 1:1 and groups); fall
   // back to the sender phone (1:1 only).
   const replyTo = body.chatJID || body.sender || '';
-
+  const userKey = body.sender || body.chatJID || '';
   const content = (body.content ?? '').trim();
+
+  // Opt-in / opt-out commands first — these short-circuit before any other parsing.
+  if (matchesAny(content, OPT_OUT_PHRASES)) {
+    const prefs = await getUserPrefs(userKey);
+    prefs.optOut = true;
+    await saveUserPrefs(userKey, prefs);
+    if (replyTo) void sendWhatsApp(replyTo, "OK, no more progress updates. Send `updates on` anytime to re-enable.");
+    return NextResponse.json({ optedOut: true });
+  }
+  if (matchesAny(content, OPT_IN_PHRASES)) {
+    const prefs = await getUserPrefs(userKey);
+    prefs.optOut = false;
+    await saveUserPrefs(userKey, prefs);
+    if (replyTo) void sendWhatsApp(replyTo, "Updates re-enabled.");
+    return NextResponse.json({ optedIn: true });
+  }
+
   const query = parsePlayCommand(content);
   if (!query) {
     // Wrong format — send a usage hint, but only in direct chats (no groups).
@@ -54,6 +85,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'could not extract phone from sender JID' }, { status: 400 });
   }
 
+  // First-time user? Send the welcome before the flow's own updates.
+  const prefs = await getUserPrefs(userKey);
+  if (!prefs.informed) {
+    if (replyTo) await sendWhatsApp(replyTo, WELCOME_MESSAGE);
+    prefs.informed = true;
+    await saveUserPrefs(userKey, prefs);
+  }
+
   const flow = getFlow('songOnDemand');
   if (!flow) {
     return NextResponse.json({ error: 'songOnDemand flow missing' }, { status: 500 });
@@ -62,7 +101,7 @@ export async function POST(req: NextRequest) {
   const session = createSession({
     to: phone,
     flow: 'songOnDemand',
-    params: { query, replyTo },
+    params: { query, replyTo, userKey },
     source: 'whatsapp',
   });
 
