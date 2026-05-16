@@ -1,16 +1,25 @@
 import type { CallSession } from './conversations/types';
 
 // In-memory store. Sessions are short-lived (one call) so persistence isn't
-// needed for MVP. If the dev server restarts mid-call, the UI just polls and
-// finds nothing — caller picks up and tries again.
-const sessions = new Map<string, CallSession>();
+// needed for MVP. Stash on globalThis so HMR / per-route module isolation in
+// the Next.js dev server doesn't give different routes different Maps.
+const g = globalThis as unknown as { __botPhoneSessions?: Map<string, CallSession> };
+if (!g.__botPhoneSessions) g.__botPhoneSessions = new Map();
+const sessions = g.__botPhoneSessions;
 
-export function createSession(to: string, flow: string): CallSession {
+export function createSession(opts: {
+  to: string;
+  flow: string;
+  params?: Record<string, unknown>;
+  source?: CallSession['source'];
+}): CallSession {
   const id = `bp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const session: CallSession = {
     id,
-    to,
-    flow,
+    to: opts.to,
+    flow: opts.flow,
+    params: opts.params ?? {},
+    source: opts.source ?? 'api',
     events: [],
     done: false,
     startedAt: Date.now(),

@@ -1,8 +1,10 @@
 import type { ConversationFlow } from './types';
 import { songRequestFlow } from './songRequest';
+import { songOnDemandFlow } from './songOnDemand';
 
 export const flows: Record<string, ConversationFlow> = {
   [songRequestFlow.id]: songRequestFlow,
+  [songOnDemandFlow.id]: songOnDemandFlow,
 };
 
 export function getFlow(id: string): ConversationFlow | undefined {

@@ -15,7 +15,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Unknown flow: ${flowId}` }, { status: 400 });
   }
 
-  const session = createSession(to, flowId);
+  const { to: _drop1, flow: _drop2, ...rest } = body;
+  void _drop1; void _drop2;
+  const session = createSession({ to, flow: flowId, params: rest, source: 'ui' });
 
   // Kick off the flow asynchronously — return the session id immediately so
   // the UI can start polling for status.

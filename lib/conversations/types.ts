@@ -19,6 +19,10 @@ export interface CallSession {
   id: string;
   to: string;
   flow: string;
+  /** Free-form flow inputs (e.g. {query: "tom petty free fallin'"}). */
+  params: Record<string, unknown>;
+  /** Where this session was triggered from (UI, whatsapp, etc.) for analytics. */
+  source: 'ui' | 'whatsapp' | 'api';
   events: CallEvent[];
   transcript?: string;
   songUrl?: string;
