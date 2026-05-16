@@ -6,6 +6,7 @@ import { getUserPrefs, saveUserPrefs } from '@/lib/users';
 
 const WELCOME_MESSAGE =
   "Hi! When you send `play <song>`, I'll search YouTube and call you back to play it.\n\n" +
+  "Example: `play tom petty free fallin'`\n\n" +
   "I'll send you 4 progress updates per request (Got it, Found, Done, plus a yearly tip-jar nudge).\n\n" +
   "Reply `no updates` to mute the per-request messages anytime.";
 
@@ -72,7 +73,10 @@ export async function POST(req: NextRequest) {
   if (!query) {
     // Wrong format — send a usage hint, but only in direct chats (no groups).
     if (replyTo && isDirectChat(body.chatJID) && content.length > 0) {
-      void sendWhatsApp(replyTo, "Send `play <song name>` to request a song.");
+      void sendWhatsApp(
+        replyTo,
+        "Send `play <song name>` to request a song. Example: `play tom petty free fallin'`",
+      );
     }
     return NextResponse.json({ ignored: 'no play command' });
   }
