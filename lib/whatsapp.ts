@@ -1,4 +1,4 @@
-const WHATSAPP_BRIDGE_URL = 'http://127.0.0.1:8080';
+const WHATSAPP_BRIDGE_URL = 'http://127.0.0.1:8081';
 
 /**
  * Send a WhatsApp text message to a recipient via the local bridge. The

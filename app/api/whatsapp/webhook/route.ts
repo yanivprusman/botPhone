@@ -23,8 +23,10 @@ async function getBridgeOwnNumber(): Promise<string | null> {
     return cachedBridgeNumber;
   }
   try {
+    // Bot bridge DB lives under whatsapp-bridge-bot/store/ — separate from the
+    // personal-account bridge so we don't accidentally trust the personal JID.
     const { stdout } = await execFileAsync('sqlite3', [
-      '/opt/automateLinux/mcpServers/whatsapp/whatsapp-bridge/store/whatsapp.db',
+      '/opt/automateLinux/mcpServers/whatsapp/whatsapp-bridge-bot/store/whatsapp.db',
       'SELECT jid FROM whatsmeow_device LIMIT 1;',
     ], { timeout: 3_000 });
     const jid = stdout.trim();
@@ -40,7 +42,8 @@ async function getBridgeOwnNumber(): Promise<string | null> {
 }
 
 const WELCOME_MESSAGE =
-  "Hi! When you send `play <song>`, I'll search YouTube and call you back to play it.\n\n" +
+  "Hi! I'm a bot 🤖 — not a person. " +
+  "When you send `play <song>`, I'll search YouTube and call you back to play it.\n\n" +
   "Example: `play tom petty free fallin'`\n\n" +
   "I'll send you 4 progress updates per request (Got it, Found, Done, plus a yearly tip-jar nudge).\n\n" +
   "Reply `no updates` to mute the per-request messages anytime.";
@@ -124,10 +127,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ optedIn: true });
   }
 
+  // First-time user? Send the welcome on ANY message (not just play commands).
+  const prefs = await getUserPrefs(userKey);
+  if (!prefs.informed && replyTo && isDirectChat(body.chatJID)) {
+    await sendWhatsApp(replyTo, WELCOME_MESSAGE);
+    prefs.informed = true;
+    await saveUserPrefs(userKey, prefs);
+  }
+
   const query = parsePlayCommand(content);
   if (!query) {
     // Wrong format — send a usage hint, but only in direct chats (no groups).
-    if (replyTo && isDirectChat(body.chatJID) && content.length > 0) {
+    if (replyTo && isDirectChat(body.chatJID) && content.length > 0 && prefs.informed) {
       void sendWhatsApp(
         replyTo,
         "Send `play <song name>` to request a song. Example: `play tom petty free fallin'`",
@@ -142,14 +153,6 @@ export async function POST(req: NextRequest) {
       void sendWhatsApp(replyTo, "Sorry, I couldn't figure out your phone number.");
     }
     return NextResponse.json({ error: 'could not extract phone from sender JID' }, { status: 400 });
-  }
-
-  // First-time user? Send the welcome before the flow's own updates.
-  const prefs = await getUserPrefs(userKey);
-  if (!prefs.informed) {
-    if (replyTo) await sendWhatsApp(replyTo, WELCOME_MESSAGE);
-    prefs.informed = true;
-    await saveUserPrefs(userKey, prefs);
   }
 
   const flow = getFlow('songOnDemand');
