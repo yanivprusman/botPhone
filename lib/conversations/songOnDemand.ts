@@ -1,12 +1,21 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { sendCmdJSON } from '../daemon';
+import { sendWhatsApp } from '../whatsapp';
 import type { CallSession, ConversationFlow, CallStage } from './types';
 
 const execFileAsync = promisify(execFile);
 
 function pushEvent(session: CallSession, stage: CallStage, detail?: string) {
   session.events.push({ ts: Date.now(), stage, detail });
+}
+
+/** Format ms duration as "M:SS". */
+function fmtDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 async function downloadSong(query: string): Promise<{ path: string; title: string }> {
@@ -64,6 +73,14 @@ export const songOnDemandFlow: ConversationFlow = {
 
   async run(session) {
     const query = String(session.params.query ?? '').trim();
+    // WhatsApp recipient to send progress updates back to. Set by the webhook
+    // handler when the flow is triggered from WhatsApp. May be undefined for
+    // UI-triggered flows — sendWhatsApp() is a no-op in that case.
+    const reply = String(session.params.replyTo ?? '');
+    const wa = async (msg: string) => {
+      if (reply) await sendWhatsApp(reply, msg);
+    };
+
     if (!query) {
       session.error = 'songOnDemand requires params.query';
       pushEvent(session, 'failed', session.error);
@@ -74,12 +91,19 @@ export const songOnDemandFlow: ConversationFlow = {
     session.transcript = query;
 
     try {
+      // Update 1/4: acknowledge the request immediately so the user knows
+      // their message was understood.
+      await wa(`Got it. Searching for "${query}"...`);
+
       // 1. Search YouTube + download FIRST. If the song doesn't exist or
       //    yt-dlp fails, we want to know before placing a call.
       pushEvent(session, 'searching', `Searching YouTube for "${query}"`);
       const { path: songPath, title } = await downloadSong(query);
       session.songTitle = title;
       pushEvent(session, 'searching', `Found: ${title}`);
+
+      // Update 2/4: confirm what was found and that the call is coming.
+      await wa(`Found: ${title}. Calling you now — pick up to hear it.`);
 
       // 2. Call + greet. --noHangup so we can inject the song after.
       const greet =
@@ -101,9 +125,25 @@ export const songOnDemandFlow: ConversationFlow = {
       pushEvent(session, 'hangingUp');
       await sendCmdJSON('botHangup', {}, 5_000);
       pushEvent(session, 'done');
+
+      // Update 3/4: done summary with duration.
+      const duration = Date.now() - session.startedAt;
+      await wa(`Done! Played "${title}" (${fmtDuration(duration)} total).`);
+
+      // Update 4/4: the coffee joke.
+      await wa("Buy me a coffee ☕ 15 NIS via Bit?");
     } catch (err) {
       session.error = err instanceof Error ? err.message : String(err);
       pushEvent(session, 'failed', session.error);
+      // Reply with a friendly message rather than the raw exception text.
+      if (session.error.includes('Call declined') ||
+          session.error.includes('never answered')) {
+        await wa("You didn't pick up — try again when you're ready.");
+      } else if (session.error.includes('yt-dlp')) {
+        await wa(`Sorry, couldn't find "${query}" on YouTube.`);
+      } else {
+        await wa(`Failed: ${session.error}`);
+      }
       try { await sendCmdJSON('botHangup', {}, 5_000); } catch { /* ignore */ }
     } finally {
       session.done = true;

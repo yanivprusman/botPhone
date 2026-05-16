@@ -1,3 +1,33 @@
+const WHATSAPP_BRIDGE_URL = 'http://127.0.0.1:8080';
+
+/**
+ * Send a WhatsApp text message to a recipient via the local bridge. The
+ * recipient should be either a JID ("972556677260@s.whatsapp.net") or a bare
+ * digit-string phone number ("972556677260") — the bridge accepts either.
+ *
+ * Returns true on success, false on any HTTP/transport failure. Errors are
+ * intentionally swallowed (logged only) because progress updates are best-
+ * effort and must never break the conversation flow.
+ */
+export async function sendWhatsApp(recipient: string, message: string): Promise<boolean> {
+  if (!recipient || !message) return false;
+  try {
+    const res = await fetch(`${WHATSAPP_BRIDGE_URL}/api/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient, message }),
+    });
+    if (!res.ok) {
+      console.error(`[whatsapp] send failed (${res.status}): ${await res.text()}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[whatsapp] send transport error:', err);
+    return false;
+  }
+}
+
 /**
  * Convert a WhatsApp JID (e.g. "972556677260@s.whatsapp.net" or
  * "972556677260:42@s.whatsapp.net") to a local Israeli phone format
