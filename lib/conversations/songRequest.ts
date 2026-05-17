@@ -14,7 +14,7 @@ async function downloadSong(query: string): Promise<{ path: string; title: strin
   const out = `/tmp/botphone-song-${Date.now()}.%(ext)s`;
   const resolved = out.replace('.%(ext)s', '.wav');
   const { stdout } = await execFileAsync(
-    '/root/.local/bin/yt-dlp',
+    'yt-dlp',
     [
       `ytsearch1:${query}`,
       '-x',

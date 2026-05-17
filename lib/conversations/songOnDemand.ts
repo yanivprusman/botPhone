@@ -46,7 +46,7 @@ async function downloadSong(query: string): Promise<{ path: string; title: strin
   let stderr = '';
   try {
     const r = await execFileAsync(
-      '/root/.local/bin/yt-dlp',
+      'yt-dlp',
       [
         `ytsearch1:${query}`,
         '-x',
