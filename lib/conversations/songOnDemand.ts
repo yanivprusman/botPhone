@@ -141,7 +141,7 @@ export const songOnDemandFlow: ConversationFlow = {
       }
       pushEvent(session, 'done');
 
-      await wa(`Done! Sent "${title}".`);
+      await wa(`Done! Sent "${title}", send no updates to stop these messages.`);
 
       // Update 4/4: coffee nudge. Sent to everyone if updates are on; if
       // opted out, only once per 365 days so the user isn't completely
