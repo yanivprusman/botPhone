@@ -156,26 +156,17 @@ export const songOnDemandFlow: ConversationFlow = {
       // Update 4/4: coffee nudge. Sent to everyone if updates are on; if
       // opted out, only once per 365 days so the user isn't completely
       // spammed but isn't fully forgotten either.
-      if (prefs && userKey) {
-        const due = isCoffeeDue(prefs);
-        if (!updatesMuted) {
-          await wa("Buy me a coffee ☕ 15 NIS via Bit?");
-          prefs.lastCoffeeAt = Date.now();
-          await saveUserPrefs(userKey, prefs);
-        } else if (due) {
-          // Opt-out path: one nudge a year, with a short re-disclosure so
-          // they remember they can re-enable updates anytime.
+      if (prefs && userKey && isCoffeeDue(prefs)) {
+        if (updatesMuted) {
           await waAlways(
             "Buy me a coffee ☕ 15 NIS via Bit? " +
             "(You're muted from progress updates — send `updates on` to re-enable.)",
           );
-          prefs.lastCoffeeAt = Date.now();
-          await saveUserPrefs(userKey, prefs);
+        } else {
+          await wa("Buy me a coffee ☕ 15 NIS via Bit?");
         }
-      } else if (reply) {
-        // No userKey (e.g. UI-triggered flow with replyTo set manually) —
-        // send the simple coffee message; we have no way to track yearly.
-        await wa("Buy me a coffee ☕ 15 NIS via Bit?");
+        prefs.lastCoffeeAt = Date.now();
+        await saveUserPrefs(userKey, prefs);
       }
     } catch (err) {
       session.error = err instanceof Error ? err.message : String(err);
