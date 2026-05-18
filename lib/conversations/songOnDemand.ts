@@ -10,14 +10,6 @@ function pushEvent(session: CallSession, stage: CallStage, detail?: string) {
   session.events.push({ ts: Date.now(), stage, detail });
 }
 
-/** Format ms duration as "M:SS". */
-function fmtDuration(ms: number): string {
-  const total = Math.round(ms / 1000);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
 /** Transcode a WAV to OGG Opus so WhatsApp renders it as a playable audio
  *  message (the bridge classifies .ogg → audio/ogg opus). Returns the new
  *  path, or null on failure. */
@@ -149,9 +141,7 @@ export const songOnDemandFlow: ConversationFlow = {
       }
       pushEvent(session, 'done');
 
-      // Done summary with duration.
-      const duration = Date.now() - session.startedAt;
-      await wa(`Done! Sent "${title}" — ${fmtDuration(duration)}.`);
+      await wa(`Done! Sent "${title}".`);
 
       // Update 4/4: coffee nudge. Sent to everyone if updates are on; if
       // opted out, only once per 365 days so the user isn't completely
