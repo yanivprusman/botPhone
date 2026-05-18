@@ -151,7 +151,7 @@ export const songOnDemandFlow: ConversationFlow = {
 
       // Done summary with duration.
       const duration = Date.now() - session.startedAt;
-      await wa(`Done! Sent "${title}" (${fmtDuration(duration)}).`);
+      await wa(`Done! Sent "${title}" — ${fmtDuration(duration)}.`);
 
       // Update 4/4: coffee nudge. Sent to everyone if updates are on; if
       // opted out, only once per 365 days so the user isn't completely
