@@ -1,6 +1,6 @@
 "use client";
 
-import { FeedbackChat } from '@automate/feedback-lib/FeedbackChat';
+import { FeedbackChat } from '@claudecontrol/feedback-lib';
 import { feedbackBackend } from '@/lib/feedback-backend';
 
 export default function FeedbackChatClient() {

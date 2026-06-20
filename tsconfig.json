@@ -13,15 +13,10 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "noEmit": true,
+    "preserveSymlinks": true,
     "paths": {
       "@/*": [
         "./*"
-      ],
-      "@automate/feedback-lib": [
-        "./lib/feedback-lib/index.ts"
-      ],
-      "@automate/feedback-lib/*": [
-        "./lib/feedback-lib/*"
       ]
     },
     "plugins": [
