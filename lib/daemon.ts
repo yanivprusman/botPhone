@@ -15,7 +15,7 @@ export function sendCmd(
     const client = net.createConnection(UDS_PATH);
     let response = '';
     let done = false;
-    const finish = (fn: (val: unknown) => void, val: unknown) => {
+    const finish = <T,>(fn: (val: T) => void, val: T) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
